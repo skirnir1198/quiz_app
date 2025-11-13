@@ -49,17 +49,43 @@ class _QuizDetailPageState extends State<QuizDetailPage> {
 
 
 
-    Navigator.push(
+        Navigator.push(
 
-      context,
 
-      MaterialPageRoute(
 
-        builder: (context) => ResultPage(question: widget.question, isCorrect: isCorrect),
+          context,
 
-      ),
 
-    );
+
+          MaterialPageRoute(
+
+
+
+            builder: (context) => ResultPage(
+
+
+
+              question: widget.question,
+
+
+
+              isCorrect: isCorrect,
+
+
+
+              selectedOption: _selectedOption!,
+
+
+
+            ),
+
+
+
+          ),
+
+
+
+        );
 
   }
 

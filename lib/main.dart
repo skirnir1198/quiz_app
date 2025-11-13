@@ -1,10 +1,18 @@
+import 'package:quiz_app/my_page.dart';
 import 'dart:convert';
 
+import 'package:firebase_auth/firebase_auth.dart';
+import 'package:firebase_core/firebase_core.dart';
+import 'package:cloud_firestore/cloud_firestore.dart';
+import 'package:firebase_auth/firebase_auth.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:quiz_app/quiz_detail_page.dart';
 
-void main() {
+void main() async {
+  WidgetsFlutterBinding.ensureInitialized();
+  await Firebase.initializeApp();
+  await FirebaseAuth.instance.signInAnonymously();
   runApp(const MyApp());
 }
 
@@ -70,11 +78,44 @@ class QuizListPage extends StatefulWidget {
 
 class _QuizListPageState extends State<QuizListPage> {
   late Future<Quiz> _quiz;
+  Map<String, String> _quizStatus = {};
 
   @override
   void initState() {
     super.initState();
     _quiz = loadQuiz();
+  }
+
+  @override
+  void didChangeDependencies() {
+    super.didChangeDependencies();
+    _fetchQuizStatus();
+  }
+
+  Future<void> _fetchQuizStatus() async {
+    final user = FirebaseAuth.instance.currentUser;
+    if (user == null) return;
+
+    final quizEnds = await FirebaseFirestore.instance
+        .collection('quiz_ends')
+        .where('userId', isEqualTo: user.uid)
+        .orderBy('timestamp', descending: true)
+        .get();
+
+    final status = <String, String>{};
+    for (final doc in quizEnds.docs) {
+      final data = doc.data();
+      final title = data['quizTitle'] as String;
+      if (!status.containsKey(title)) {
+        status[title] = data['isCorrect'] ? 'correct' : 'incorrect';
+      }
+    }
+
+    if (mounted) {
+      setState(() {
+        _quizStatus = status;
+      });
+    }
   }
 
   Future<Quiz> loadQuiz() async {
@@ -93,6 +134,17 @@ class _QuizListPageState extends State<QuizListPage> {
         title: const Text('クリティカルシンキングクイズ'),
         backgroundColor: Theme.of(context).colorScheme.primary,
         foregroundColor: Theme.of(context).colorScheme.onPrimary,
+        actions: [
+          IconButton(
+            icon: const Icon(Icons.person),
+            onPressed: () {
+              Navigator.push(
+                context,
+                MaterialPageRoute(builder: (context) => const MyPage()),
+              );
+            },
+          ),
+        ],
       ),
       body: FutureBuilder<Quiz>(
         future: _quiz,
@@ -112,7 +164,7 @@ class _QuizListPageState extends State<QuizListPage> {
                     leading: CircleAvatar(
                       backgroundColor: Theme.of(context).colorScheme.primary,
                       child: FittedBox(
-                        fit: BoxFit.scaleDown,
+                        fit: BoxFit.contain,
                         child: Text(
                           "Lv.${question.level}",
                           style: const TextStyle(color: Colors.white),
@@ -123,15 +175,31 @@ class _QuizListPageState extends State<QuizListPage> {
                       question.title,
                       style: const TextStyle(fontWeight: FontWeight.bold),
                     ),
-                    trailing: const Icon(Icons.arrow_forward_ios),
+                    trailing: _quizStatus[question.title] == 'correct'
+                        ? const Icon(Icons.check_circle, color: Colors.green)
+                        : _quizStatus[question.title] == 'incorrect'
+                        ? const Icon(Icons.cancel, color: Colors.red)
+                        : const Icon(Icons.arrow_forward_ios),
                     onTap: () {
-                      Navigator.push(
+                      final user = FirebaseAuth.instance.currentUser;
+                      if (user != null) {
+                        FirebaseFirestore.instance
+                            .collection('quiz_starts')
+                            .add({
+                              'userId': user.uid,
+                              'quizTitle': question.title,
+                              'timestamp': FieldValue.serverTimestamp(),
+                            });
+                      }
+                      Navigator.push<void>(
                         context,
                         MaterialPageRoute(
                           builder: (context) =>
                               QuizDetailPage(question: question),
                         ),
-                      );
+                      ).then((_) {
+                        _fetchQuizStatus();
+                      });
                     },
                   ),
                 );
